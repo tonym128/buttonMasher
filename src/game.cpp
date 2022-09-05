@@ -7,6 +7,7 @@
 #include <WiFi.h>
 #include "time.h"
 #include "Button2.h"
+#include <WiFiManager.h>          //https://github.com/tzapu/WiFiManager WiFi Configuration Magic
 
 #define BUTTON_A_PIN 0
 #define BUTTON_B_PIN 35
@@ -20,9 +21,6 @@ Button2 buttonA, buttonB;
 
 #define SCALEX(x) (x * 4 / 5)
 #define SCALEY(y) (y * 3 / 4)
-
-const char *ssid = "wifi";
-const char *password = "password";
 
 const char *ntpServer = "pool.ntp.org";
 const long gmtOffset_sec = 3600;
@@ -185,11 +183,17 @@ void setup(void)
   lcd.fillScreen(TFT_BLACK);
   lcd.setRotation(1);
 
-  WiFi.begin(ssid, password);
-  if (WiFi.status() != WL_CONNECTED)
-  {
-    delay(500);
-    Serial.print(".");
+  WiFiManager wm;
+  bool res;
+  res = wm.autoConnect(); // auto generated AP name from chipid
+
+  if(!res) {
+      Serial.println("Failed to connect");
+      // ESP.restart();
+  } 
+  else {
+      //if you get here you have connected to the WiFi    
+      Serial.println("connected...yeey :)");
   }
 
   // sprite.createSprite(320, 170);

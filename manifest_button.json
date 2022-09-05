@@ -1,7 +1,7 @@
 {
-  "name": "HoneyHunter For ESP32",
+  "name": "ButtonMasher For ESP32",
   "version": "1.0",
-  "home_assistant_domain": "honeyhunter",
+  "home_assistant_domain": "ButtonMasher",
   "builds": [
     {
       "chipFamily": "ESP32",
