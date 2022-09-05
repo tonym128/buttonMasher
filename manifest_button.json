@@ -1,0 +1,14 @@
+{
+  "name": "HoneyHunter For ESP32",
+  "version": "1.0",
+  "home_assistant_domain": "honeyhunter",
+  "builds": [
+    {
+      "chipFamily": "ESP32",
+      "parts": [{ "path": "firmware/bootloader_dio_40m.bin", "offset": 4096 },
+                { "path": "firmware/partitions.bin", "offset": 32768 },
+                { "path": "firmware/boot_app0.bin", "offset": 57344 },
+                { "path": "firmware/firmware.bin", "offset": 65536 }]
+    }
+  ]
+}
