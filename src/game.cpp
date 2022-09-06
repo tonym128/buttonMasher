@@ -11,7 +11,6 @@
 
 #define BUTTON_A_PIN 0
 #define BUTTON_B_PIN 35
-int PIN_THRESHOLD = 70;
 
 TFT_eSPI lcd = TFT_eSPI();
 TFT_eSprite sprite = TFT_eSprite(&lcd);
@@ -26,22 +25,17 @@ const char *ntpServer = "pool.ntp.org";
 const long gmtOffset_sec = 3600;
 const int daylightOffset_sec = 3600;
 
-int values_old[24] = {0};
+struct button {
+  int values[24] = {0};
+  int pin = -1;
+  int threshold = 70;
+  int average = 0;
+  bool pressed = 0;
+  int colour = TFT_BLACK;
+  bool digital = false;
+};
 
-int valuesa[24] = {0};
-int valuesb[24] = {0};
-int valuesc[24] = {0};
-int valuesd[24] = {0};
-int valuese[24] = {0};
-int valuesf[24] = {0};
-int valuesg[24] = {0};
-int valuesh[24] = {0};
-int valuesi[24] = {0};
-
-int colours[10];
-bool digitalOrAnalog[10];
-
-int *values[10];
+button buttons[10];
 
 char timeHour[3] = "00";
 char timeMin[3] = "00";
@@ -56,7 +50,7 @@ int gw = SCALEX(204);
 int gh = SCALEY(102);
 int gx = SCALEX(110);
 int gy = SCALEY(144);
-int curent = 0;
+int currentVal = 0;
 #define gray 0x6B6D
 #define blue 0x0967
 #define orange 0xC260
@@ -99,6 +93,103 @@ int displayMode = 0;
 int MAX_PIN_MODE = 9;
 int MIN_PIN_MODE = 0;
 
+
+int counter = 0;
+int Min = gh / 2;
+int Max = 0;
+int average = 0;
+String minT = "";
+String maxT = "";
+char pinString[] = "ALL";
+char pinString2[] = "ON PIN ALL";
+
+long lastMillis = 0;
+int fps = 0;
+
+int digitalReadPin(struct button *empty, struct button *current)
+{
+  int Push_button_state = current->pin == 0 ? buttonAPress : buttonBPress;
+
+  int num = Push_button_state == HIGH ? 10 : 80;
+
+  currentVal = num;
+
+  for (int i = 0; i < 24; i++)
+    empty->values[i] = current->values[i];
+
+  for (int i = 23; i > 0; i--)
+    current->values[i - 1] = empty->values[i];
+
+  current->pressed = currentVal < current->threshold;
+  current->values[23] = currentVal;
+  if (currentVal > Max)
+  {
+    Max = currentVal;
+    maxT = String(timeHour) + ":" + String(timeMin) + ":" + String(timeSec);
+  }
+  if (currentVal < Min)
+  {
+    Min = currentVal;
+    minT = String(timeHour) + ":" + String(timeMin) + ":" + String(timeSec);
+  }
+
+  average = 0;
+  for (int i = 0; i < 24; i++)
+    average = average + current->values[i];
+  average = average / 24;
+  current->average = average;
+  return average;
+}
+
+
+int touchReadPin(struct button *empty, struct button *current)
+{
+  int num = touchRead(current->pin);
+  currentVal = num; // map(num,0,1024,0,gh);
+
+  for (int i = 0; i < 24; i++)
+    empty->values[i] = current->values[i];
+
+  for (int i = 23; i > 0; i--)
+    current->values[i - 1] = empty->values[i];
+
+  current->pressed = currentVal < current->threshold;
+  current->values[23] = currentVal;
+  if (currentVal > Max)
+  {
+    Max = currentVal;
+    maxT = String(timeHour) + ":" + String(timeMin) + ":" + String(timeSec);
+  }
+  if (currentVal < Min)
+  {
+    Min = currentVal;
+    minT = String(timeHour) + ":" + String(timeMin) + ":" + String(timeSec);
+  }
+
+  average = 0;
+  for (int i = 0; i < 24; i++)
+    average = average + current->values[i];
+  average = average / 24;
+  current->average = average;
+  return average;
+}
+void doubleClick(Button2 &btn)
+{
+  if (btn == buttonA)
+  {
+    displayMode -= 1;
+  }
+  else if (btn == buttonB)
+  {
+    displayMode += 1;
+  }
+
+  if (displayMode > MAX_PIN_MODE)
+    displayMode = MIN_PIN_MODE;
+  if (displayMode < MIN_PIN_MODE)
+    displayMode = MAX_PIN_MODE;
+}
+
 void pressed(Button2 &btn)
 {
   if (btn == buttonA)
@@ -116,67 +207,63 @@ void released(Button2 &btn)
   if (btn == buttonA)
   {
     buttonAPress = 0;
-    displayMode -= 1;
   }
   else if (btn == buttonB)
   {
     buttonBPress = 0;
-    displayMode += 1;
   }
-
-  if (displayMode > MAX_PIN_MODE)
-    displayMode = MIN_PIN_MODE;
-  if (displayMode < MIN_PIN_MODE)
-    displayMode = MAX_PIN_MODE;
 }
 
-int pinArray[10];
 bool configuredTime = false;
+
+void buildThresholds() {
+  int average;
+  for (int i = 0; i < 24; i++) {
+    for (int j = 1; j < 10; j++) {
+        if (buttons[j].digital) 
+          digitalReadPin(&buttons[0],&buttons[j]);
+        else 
+          touchReadPin(&buttons[0],&buttons[j]);
+    }
+  }
+
+  for (int j = 1; j < 10; j++)
+    buttons[j].threshold = buttons[j].average*3/4;
+}
 
 void setup(void)
 {
-  pinArray[0] = -1;
-  pinArray[1] = 2;
-  pinArray[2] = 15;
-  pinArray[3] = 13;
-  pinArray[4] = 12;
-  pinArray[5] = 32;
-  pinArray[6] = 33;
-  pinArray[7] = 27;
-  pinArray[8] = 0;
-  pinArray[9] = 35;
+  buttons[0].pin = -1;
+  buttons[1].pin = 2;
+  buttons[2].pin = 15;
+  buttons[3].pin = 13;
+  buttons[4].pin = 12;
+  buttons[5].pin = 32;
+  buttons[6].pin = 33;
+  buttons[7].pin = 27;
+  buttons[8].pin = 0;
+  buttons[9].pin = 35;
 
-  values[0] = values_old;
-  values[1] = valuesa;
-  values[2] = valuesb;
-  values[3] = valuesc;
-  values[4] = valuesd;
-  values[5] = valuese;
-  values[6] = valuesf;
-  values[7] = valuesg;
-  values[8] = valuesh;
-  values[9] = valuesi;
+  buttons[1].colour = TFT_RED;
+  buttons[2].colour = TFT_BLUE;
+  buttons[3].colour = TFT_YELLOW;
+  buttons[4].colour = TFT_GREEN;
+  buttons[5].colour = TFT_ORANGE;
+  buttons[6].colour = TFT_BROWN;
+  buttons[7].colour = TFT_VIOLET;
+  buttons[8].colour = TFT_SKYBLUE;
+  buttons[9].colour = TFT_CYAN;
 
-  colours[1] = TFT_RED;
-  colours[2] = TFT_BLUE;
-  colours[3] = TFT_YELLOW;
-  colours[4] = TFT_GREEN;
-  colours[5] = TFT_ORANGE;
-  colours[6] = TFT_BROWN;
-  colours[7] = TFT_VIOLET;
-  colours[8] = TFT_SKYBLUE;
-  colours[9] = TFT_CYAN;
-
-  digitalOrAnalog[0] = 1;
-  digitalOrAnalog[1] = 1;
-  digitalOrAnalog[2] = 1;
-  digitalOrAnalog[3] = 1;
-  digitalOrAnalog[4] = 1;
-  digitalOrAnalog[5] = 1;
-  digitalOrAnalog[6] = 1;
-  digitalOrAnalog[7] = 1;
-  digitalOrAnalog[8] = 0;
-  digitalOrAnalog[9] = 0;
+  buttons[0].digital = 0;
+  buttons[1].digital = 0;
+  buttons[2].digital = 0;
+  buttons[3].digital = 0;
+  buttons[4].digital = 0;
+  buttons[5].digital = 0;
+  buttons[6].digital = 0;
+  buttons[7].digital = 0;
+  buttons[8].digital = 1;
+  buttons[9].digital = 1;
 
   Serial.begin(115200);
   lcd.init();
@@ -185,8 +272,14 @@ void setup(void)
 
   WiFiManager wm;
   bool res;
-  res = wm.autoConnect(); // auto generated AP name from chipid
+  sprite.createSprite(240, 135);
+  sprite.setTextDatum(3);
+  sprite.setSwapBytes(true);
+  sprite.setTextColor(TFT_RED);
+  sprite.drawCentreString("Initialising WiFi",0,0,3);
+  sprite.pushSprite(0, 0);
 
+  res = wm.autoConnect(); // auto generated AP name from chipid
   if(!res) {
       Serial.println("Failed to connect");
       // ESP.restart();
@@ -196,96 +289,17 @@ void setup(void)
       Serial.println("connected...yeey :)");
   }
 
-  // sprite.createSprite(320, 170);
-  // sprite.setTextDatum(3);
-  // sprite.setSwapBytes(true);
-
-  sprite.createSprite(240, 135);
-  sprite.setTextDatum(3);
-  sprite.setSwapBytes(true);
+  buildThresholds();
 
   buttonA.begin(BUTTON_A_PIN);
   buttonA.setPressedHandler(pressed);
   buttonA.setReleasedHandler(released);
+  buttonA.setDoubleClickHandler(doubleClick);
 
   buttonB.begin(BUTTON_B_PIN);
   buttonB.setPressedHandler(pressed);
   buttonB.setReleasedHandler(released);
-}
-
-int counter = 0;
-int Min = gh / 2;
-int Max = 0;
-int average = 0;
-String minT = "";
-String maxT = "";
-char pinString[] = "ALL";
-char pinString2[] = "ON PIN ALL";
-
-long lastMillis = 0;
-int fps = 0;
-
-int digitalReadPin(int pin, int *array1, int *array2)
-{
-  int Push_button_state = pin == 0 ? buttonAPress : buttonBPress;
-
-  int num = Push_button_state == HIGH ? 10 : 140;
-
-  curent = num;
-
-  for (int i = 0; i < 24; i++)
-    array2[i] = array1[i];
-
-  for (int i = 23; i > 0; i--)
-    array1[i - 1] = array2[i];
-
-  array1[23] = curent;
-  if (array1[23] > Max)
-  {
-    Max = array1[23];
-    maxT = String(timeHour) + ":" + String(timeMin) + ":" + String(timeSec);
-  }
-  if (array1[23] < Min)
-  {
-    Min = array1[23];
-    minT = String(timeHour) + ":" + String(timeMin) + ":" + String(timeSec);
-  }
-
-  average = 0;
-  for (int i = 0; i < 24; i++)
-    average = average + array1[i];
-  average = average / 24;
-  return average;
-}
-
-int touchReadPin(int pin, int *array1, int *array2)
-{
-  int num = touchRead(pin);
-  curent = num; // map(num,0,1024,0,gh);
-
-  for (int i = 0; i < 24; i++)
-    array2[i] = array1[i];
-
-  for (int i = 23; i > 0; i--)
-    array1[i - 1] = array2[i];
-
-  array1[23] = curent;
-  if (array1[23] > Max)
-  {
-    Max = array1[23];
-    maxT = String(timeHour) + ":" + String(timeMin) + ":" + String(timeSec);
-  }
-  if (array1[23] < Min)
-  {
-    Min = array1[23];
-    minT = String(timeHour) + ":" + String(timeMin) + ":" + String(timeSec);
-  }
-
-  average = 0;
-  for (int i = 0; i < 24; i++)
-    average = average + array1[i];
-  average = average / 24;
-  return average;
+  buttonB.setDoubleClickHandler(doubleClick);
 }
 
 void drawPoint(int i, int num1, int num2, int color)
@@ -320,31 +334,28 @@ void loop()
 
   for (int i = 1; i < 10; i++)
   {
-    average += digitalOrAnalog[i] ? touchReadPin(pinArray[i], values[i], values[0]) : digitalReadPin(pinArray[i], values[i], values[0]);
+    average += buttons[i].digital ? digitalReadPin(&buttons[0],&buttons[i]) : touchReadPin(&buttons[0],&buttons[i]);
   }
 
   average /= 9;
 
   sprite.fillSprite(TFT_BLACK);
-  // sprite.setTextDatum(4);
+
   sprite.setTextColor(TFT_WHITE, blue);
   sprite.fillRoundRect(SCALEX(6), SCALEY(5), SCALEX(38), SCALEY(32), 3, blue);
   sprite.fillRoundRect(SCALEX(52), SCALEY(5), SCALEX(38), SCALEY(32), 3, blue);
   sprite.fillRoundRect(SCALEX(6), SCALEY(42), SCALEX(80), SCALEY(12), 3, blue);
   sprite.fillRoundRect(SCALEX(6), SCALEY(82), SCALEX(78), SCALEY(76), 3, purple);
   sprite.fillRoundRect(SCALEX(6), SCALEY(58), SCALEX(80), SCALEY(18), 3, green);
-  sprite.drawString(String(timeHour), SCALEX(10), SCALEY(24), 4);
-  sprite.drawString(String(timeMin), SCALEX(56), SCALEY(24), 4);
+  sprite.drawString(String(timeHour), SCALEX(10), SCALEY(26), 4);
+  sprite.drawString(String(timeMin), SCALEX(56), SCALEY(26), 4);
   sprite.drawString(String(m) + " " + String(d), SCALEX(10), SCALEY(48));
-  // sprite.drawString(String(dw)+", "+String(y),10,58);
-
-  // sprite.drawString(String(analogRead(18)),gx+160,26);
 
   sprite.drawString(String(timeSec), gx - SCALEX(14), SCALEY(14), 2);
   sprite.setTextColor(TFT_WHITE, purple);
   sprite.drawString("CURR: " + String(average), SCALEX(10), SCALEY(92), 2);
 
-  sprite.drawString("MIN: " + String(Min), SCALEX(10), SCALEY(108), 2);
+  sprite.drawString("MIN: " + String(Min), SCALEX(10), SCALEY(112), 2);
 
   sprite.drawString("MAX: " + String(Max), SCALEX(10), SCALEY(138), 2);
 
@@ -360,10 +371,10 @@ void loop()
     sprintf(pinString, "All");
   }
   else
-    sprintf(pinString, "%d", pinArray[displayMode]);
+    sprintf(pinString, "%d", buttons[displayMode].pin);
 
   sprintf(pinString2, "PIN %s", pinString);
-  sprite.drawString(pinString2, gx + 10, 30);
+  sprite.drawString(pinString2, gx + 10, 25);
 
   sprite.setFreeFont();
 
@@ -384,12 +395,12 @@ void loop()
   {
     int x = gx + j * SCALEX(10);
     int y = SCALEY(16);
-    sprite.fillRect(x, y, SCALEX(10), SCALEX(10), values[j][23] < PIN_THRESHOLD ? colours[j] : TFT_BLACK);
+    sprite.fillRect(x, y, SCALEX(10), SCALEX(10), buttons[j].pressed ? buttons[j].colour : TFT_BLACK);
 
     for (int i = 0; i < 23; i++)
     {
       if (displayMode == 0 | displayMode == j)
-        drawPoint(i, map(values[j][i], 0, Max, 0, gh), map(values[j][i + 1], 0, Max, 0, gh), colours[j]);
+        drawPoint(i, map(buttons[j].values[i], 0, Max, 0, gh), map(buttons[j].values[i + 1], 0, Max, 0, gh), buttons[j].colour);
     }
   }
 
@@ -397,20 +408,13 @@ void loop()
   // sprite.drawString("BAT:" + String(analogRead(4)), gx + 160, 16);
   // sprite.drawString("MOD:" + String(Mode), gx + 160, 26);
 
-  // copySprite();
   sprite.pushSprite(0, 0);
   // sprite.pushSprite(0, 0);
   char *s = new char[256];
-  sprintf(s, "p%d:d%d:v%d, p%d:d%d:v%d, p%d:d%d:v%d, p%d:d%d:v%d, p%d:d%d:v%d, p%d:d%d:v%d, p%d:d%d:v%d, p%d:d%d:v%d, p%d:d%d:v%d", 
-  pinArray[1], digitalOrAnalog[1], values[1][23] , 
-  pinArray[2], digitalOrAnalog[2], values[2][23] , 
-  pinArray[3], digitalOrAnalog[3], values[3][23] , 
-  pinArray[4], digitalOrAnalog[4], values[4][23] , 
-  pinArray[5], digitalOrAnalog[5], values[5][23] , 
-  pinArray[6], digitalOrAnalog[6], values[6][23] , 
-  pinArray[7], digitalOrAnalog[7], values[7][23] , 
-  pinArray[8], digitalOrAnalog[8], values[8][23] , 
-  pinArray[9], digitalOrAnalog[9], values[9][23]);
+  sprintf(s,"");
+  for (int i = 1; i < 10; i++) {
+    sprintf(s + strlen(s),"p%d:d%d:v%d:a%d ",buttons[i].pin, buttons[i].digital, buttons[i].values[23] ,buttons[i].pressed);
+  }
   Serial.println(s);
   delete (s);
 
